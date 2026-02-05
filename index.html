@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BUDGET.exe - Personal Finance Tracker</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Space Mono', monospace;
+        }
+        #root {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const PlusCircle = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>;
+        const Trash2 = ({ size = 18 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>;
+        const TrendingUp = ({ size = 24, color = "currentColor" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
+        const TrendingDown = ({ size = 24, color = "currentColor" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>;
+        const DollarSign = ({ size = 24, color = "currentColor" }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>;
+        const Target = ({ size = 20 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>;
+        const Download = ({ size = 18 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
+        const Upload = ({ size = 18 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
+
+        // LocalStorage wrapper to mimic the storage API
+        const storage = {
+            get: async (key) => {
+                try {
+                    const value = localStorage.getItem(key);
+                    if (value) {
+                        return { key, value, shared: false };
+                    }
+                    throw new Error('Key not found');
+                } catch (error) {
+                    throw error;
+                }
+            },
+            set: async (key, value) => {
+                try {
+                    localStorage.setItem(key, value);
+                    return { key, value, shared: false };
+                } catch (error) {
+                    console.error('Storage error:', error);
+                    return null;
+                }
+            },
+            delete: async (key) => {
+                try {
+                    localStorage.removeItem(key);
+                    return { key, deleted: true, shared: false };
+                } catch (error) {
+                    return null;
+                }
+            }
+        };
+
+        const BudgetApp = () => {
+            const [expenses, setExpenses] = useState([]);
+            const [budgets, setBudgets] = useState({});
+            const [income, setIncome] = useState(0);
+            const [newExpense, setNewExpense] = useState({
+                amount: '',
+                category: '',
+                description: '',
+                date: new Date().toISOString().split('T')[0]
+            });
+            const [newBudget, setNewBudget] = useState({ category: '', amount: '' });
+            const [view, setView] = useState('dashboard');
+            const [loading, setLoading] = useState(true);
+            const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+
+            const categories = [
+                'Housing', 'Food & Dining', 'Transportation', 'Utilities', 
+                'Healthcare', 'Entertainment', 'Shopping', 'Travel', 
+                'Education', 'Insurance', 'Savings', 'Other'
+            ];
+
+            const colors = {
+                'Housing': '#FF6B6B',
+                'Food & Dining': '#4ECDC4',
+                'Transportation': '#45B7D1',
+                'Utilities': '#FFA07A',
+                'Healthcare': '#98D8C8',
+                'Entertainment': '#F7DC6F',
+                'Shopping': '#BB8FCE',
+                'Travel': '#85C1E2',
+                'Education': '#F8B739',
+                'Insurance': '#52B788',
+                'Savings': '#06A77D',
+                'Other': '#95A5A6'
+            };
+
+            // Load data from storage on mount
+            useEffect(() => {
+                const loadData = async () => {
+                    try {
+                        const expensesResult = await storage.get('budget-expenses');
+                        const budgetsResult = await storage.get('budget-budgets');
+                        const incomeResult = await storage.get('budget-income');
+
+                        if (expensesResult?.value) {
+                            setExpenses(JSON.parse(expensesResult.value));
+                        }
+                        if (budgetsResult?.value) {
+                            setBudgets(JSON.parse(budgetsResult.value));
+                        }
+                        if (incomeResult?.value) {
+                            setIncome(JSON.parse(incomeResult.value));
+                        }
+                    } catch (error) {
+                        console.log('No existing data found, starting fresh');
+                    }
+                    setLoading(false);
+                };
+
+                loadData();
+            }, []);
+
+            // Save expenses to storage
+            useEffect(() => {
+                if (!loading && expenses.length >= 0) {
+                    storage.set('budget-expenses', JSON.stringify(expenses)).catch(err => {
+                        console.error('Failed to save expenses:', err);
+                    });
+                }
+            }, [expenses, loading]);
+
+            // Save budgets to storage
+            useEffect(() => {
+                if (!loading) {
+                    storage.set('budget-budgets', JSON.stringify(budgets)).catch(err => {
+                        console.error('Failed to save budgets:', err);
+                    });
+                }
+            }, [budgets, loading]);
+
+            // Save income to storage
+            useEffect(() => {
+                if (!loading) {
+                    storage.set('budget-income', JSON.stringify(income)).catch(err => {
+                        console.error('Failed to save income:', err);
+                    });
+                }
+            }, [income, loading]);
+
+            const addExpense = () => {
+                if (newExpense.amount && newExpense.category) {
+                    setExpenses([...expenses, {
+                        ...newExpense,
+                        amount: parseFloat(newExpense.amount),
+                        id: Date.now()
+                    }]);
+                    setNewExpense({
+                        amount: '',
+                        category: '',
+                        description: '',
+                        date: new Date().toISOString().split('T')[0]
+                    });
+                }
+            };
+
+            const deleteExpense = (id) => {
+                setExpenses(expenses.filter(e => e.id !== id));
+            };
+
+            const addBudget = () => {
+                if (newBudget.category && newBudget.amount) {
+                    setBudgets({
+                        ...budgets,
+                        [newBudget.category]: parseFloat(newBudget.amount)
+                    });
+                    setNewBudget({ category: '', amount: '' });
+                }
+            };
+
+            const deleteBudget = (category) => {
+                const updated = { ...budgets };
+                delete updated[category];
+                setBudgets(updated);
+            };
+
+            const getMonthlyExpenses = () => {
+                return expenses.filter(e => e.date.startsWith(selectedMonth));
+            };
+
+            const getCategoryTotals = () => {
+                const totals = {};
+                getMonthlyExpenses().forEach(expense => {
+                    totals[expense.category] = (totals[expense.category] || 0) + expense.amount;
+                });
+                return totals;
+            };
+
+            const totalExpenses = getMonthlyExpenses().reduce((sum, e) => sum + e.amount, 0);
+            const totalBudget = Object.values(budgets).reduce((sum, b) => sum + b, 0);
+            const categoryTotals = getCategoryTotals();
+
+            const exportData = () => {
+                const data = {
+                    expenses,
+                    budgets,
+                    income,
+                    exportDate: new Date().toISOString()
+                };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `budget-export-${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+            };
+
+            const importData = (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = JSON.parse(e.target.result);
+                            if (data.expenses) setExpenses(data.expenses);
+                            if (data.budgets) setBudgets(data.budgets);
+                            if (data.income) setIncome(data.income);
+                        } catch (error) {
+                            alert('Error importing data. Please check the file format.');
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            };
+
+            if (loading) {
+                return (
+                    <div style={{
+                        minHeight: '100vh',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%)',
+                        color: '#00ff9d',
+                        fontFamily: '"Space Mono", monospace'
+                    }}>
+                        Loading your budget...
+                    </div>
+                );
+            }
+
+            return (
+                <div style={{
+                    minHeight: '100vh',
+                    background: 'linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%)',
+                    fontFamily: '"Space Mono", monospace',
+                    color: '#e0e0e0',
+                    padding: '0'
+                }}>
+                    {/* Header */}
+                    <div style={{
+                        background: 'rgba(0, 255, 157, 0.03)',
+                        borderBottom: '2px solid #00ff9d',
+                        padding: '1.5rem 2rem',
+                        backdropFilter: 'blur(10px)'
+                    }}>
+                        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+                            <h1 style={{
+                                margin: 0,
+                                fontSize: '2.5rem',
+                                fontWeight: '700',
+                                background: 'linear-gradient(90deg, #00ff9d 0%, #00d4ff 100%)',
+                                WebkitBackgroundClip: 'text',
+                                WebkitTextFillColor: 'transparent',
+                                letterSpacing: '-0.02em',
+                                textShadow: '0 0 30px rgba(0, 255, 157, 0.3)'
+                            }}>
+                                BUDGET.exe
+                            </h1>
+                            <p style={{
+                                margin: '0.5rem 0 0 0',
+                                color: '#00ff9d',
+                                fontSize: '0.9rem',
+                                opacity: 0.7
+                            }}>
+                                Financial tracking protocol v2.0
+                            </p>
+                        </div>
+                    </div>
+
+                    <div style={{ maxWidth: '1400px', margin: '0 auto', padding: '2rem' }}>
+                        {/* Navigation */}
+                        <div style={{
+                            display: 'flex',
+                            gap: '1rem',
+                            marginBottom: '2rem',
+                            flexWrap: 'wrap'
+                        }}>
+                            {['dashboard', 'expenses', 'budgets', 'analytics'].map(tab => (
+                                <button
+                                    key={tab}
+                                    onClick={() => setView(tab)}
+                                    style={{
+                                        padding: '0.75rem 1.5rem',
+                                        background: view === tab ? '#00ff9d' : 'rgba(0, 255, 157, 0.1)',
+                                        color: view === tab ? '#0f0f23' : '#00ff9d',
+                                        border: `2px solid ${view === tab ? '#00ff9d' : 'rgba(0, 255, 157, 0.3)'}`,
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontFamily: 'inherit',
+                                        fontWeight: '600',
+                                        fontSize: '0.9rem',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        transition: 'all 0.3s ease',
+                                        transform: view === tab ? 'translateY(-2px)' : 'none',
+                                        boxShadow: view === tab ? '0 4px 15px rgba(0, 255, 157, 0.3)' : 'none'
+                                    }}
+                                >
+                                    {tab}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Dashboard View */}
+                        {view === 'dashboard' && (
+                            <div>
+                                {/* Month Selector */}
+                                <div style={{
+                                    marginBottom: '2rem',
+                                    padding: '1.5rem',
+                                    background: 'rgba(0, 255, 157, 0.05)',
+                                    border: '1px solid rgba(0, 255, 157, 0.2)',
+                                    borderRadius: '12px'
+                                }}>
+                                    <label style={{
+                                        display: 'block',
+                                        marginBottom: '0.5rem',
+                                        color: '#00ff9d',
+                                        fontSize: '0.85rem',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.1em'
+                                    }}>
+                                        Viewing Period
+                                    </label>
+                                    <input
+                                        type="month"
+                                        value={selectedMonth}
+                                        onChange={(e) => setSelectedMonth(e.target.value)}
+                                        style={{
+                                            padding: '0.75rem',
+                                            background: 'rgba(0, 0, 0, 0.3)',
+                                            border: '1px solid rgba(0, 255, 157, 0.3)',
+                                            borderRadius: '8px',
+                                            color: '#00ff9d',
+                                            fontFamily: 'inherit',
+                                            fontSize: '1rem',
+                                            width: '200px'
+                                        }}
+                                    />
+                                </div>
+
+                                {/* Summary Cards */}
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                                    gap: '1.5rem',
+                                    marginBottom: '2rem'
+                                }}>
+                                    {/* Income Card */}
+                                    <div style={{
+                                        padding: '2rem',
+                                        background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.1) 0%, rgba(0, 255, 157, 0.1) 100%)',
+                                        border: '1px solid rgba(0, 212, 255, 0.3)',
+                                        borderRadius: '16px',
+                                        position: 'relative',
+                                        overflow: 'hidden'
+                                    }}>
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: '-50%',
+                                            right: '-20%',
+                                            width: '200px',
+                                            height: '200px',
+                                            background: 'radial-gradient(circle, rgba(0, 212, 255, 0.2) 0%, transparent 70%)',
+                                            borderRadius: '50%'
+                                        }}></div>
+                                        <div style={{ position: 'relative', zIndex: 1 }}>
+                                            <div style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                marginBottom: '1rem'
+                                            }}>
+                                                <TrendingUp size={24} color="#00d4ff" />
+                                                <span style={{
+                                                    fontSize: '0.85rem',
+                                                    color: '#00d4ff',
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: '0.1em'
+                                                }}>
+                                                    Monthly Income
+                                                </span>
+                                            </div>
+                                            <div style={{
+                                                fontSize: '2.5rem',
+                                                fontWeight: '700',
+                                                color: '#00d4ff',
+                                                marginBottom: '1rem'
+                                            }}>
+                                                ${income.toLocaleString()}
+                                            </div>
+                                            <input
+                                                type="number"
+                                                value={income || ''}
+                                                onChange={(e) => setIncome(parseFloat(e.target.value) || 0)}
+                                                placeholder="Set income"
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '0.75rem',
+                                                    background: 'rgba(0, 0, 0, 0.3)',
+                                                    border: '1px solid rgba(0, 212, 255, 0.3)',
+                                                    borderRadius: '8px',
+                                                    color: '#00d4ff',
+                                                    fontFamily: 'inherit',
+                                                    fontSize: '0.9rem'
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Expenses Card */}
+                                    <div style={{
+                                        padding: '2rem',
+                                        background: 'linear-gradient(135deg, rgba(255, 107, 107, 0.1) 0%, rgba(255, 160, 122, 0.1) 100%)',
+                                        border: '1px solid rgba(255, 107, 107, 0.3)',
+                                        borderRadius: '16px',
+                                        position: 'relative',
+                                        overflow: 'hidden'
+                                    }}>
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: '-50%',
+                                            right: '-20%',
+                                            width: '200px',
+                                            height: '200px',
+                                            background: 'radial-gradient(circle, rgba(255, 107, 107, 0.2) 0%, transparent 70%)',
+                                            borderRadius: '50%'
+                                        }}></div>
+                                        <div style={{ position: 'relative', zIndex: 1 }}>
+                                            <div style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                marginBottom: '1rem'
+                                            }}>
+                                                <TrendingDown size={24} color="#FF6B6B" />
+                                                <span style={{
+                                                    fontSize: '0.85rem',
+                                                    color: '#FF6B6B',
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: '0.1em'
+                                                }}>
+                                                    Total Expenses
+                                                </span>
+                                            </div>
+                                            <div style={{
+                                                fontSize: '2.5rem',
+                                                fontWeight: '700',
+                                                color: '#FF6B6B'
+                                            }}>
+                                                ${totalExpenses.toLocaleString()}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Balance Card */}
+                                    <div style={{
+                                        padding: '2rem',
+                                        background: 'linear-gradient(135deg, rgba(0, 255, 157, 0.1) 0%, rgba(6, 167, 125, 0.1) 100%)',
+                                        border: `1px solid ${income - totalExpenses >= 0 ? 'rgba(0, 255, 157, 0.3)' : 'rgba(255, 107, 107, 0.3)'}`,
+                                        borderRadius: '16px',
+                                        position: 'relative',
+                                        overflow: 'hidden'
+                                    }}>
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: '-50%',
+                                            right: '-20%',
+                                            width: '200px',
+                                            height: '200px',
+                                            background: `radial-gradient(circle, ${income - totalExpenses >= 0 ? 'rgba(0, 255, 157, 0.2)' : 'rgba(255, 107, 107, 0.2)'} 0%, transparent 70%)`,
+                                            borderRadius: '50%'
+                                        }}></div>
+                                        <div style={{ position: 'relative', zIndex: 1 }}>
+                                            <div style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                marginBottom: '1rem'
+                                            }}>
+                                                <DollarSign size={24} color={income - totalExpenses >= 0 ? '#00ff9d' : '#FF6B6B'} />
+                                                <span style={{
+                                                    fontSize: '0.85rem',
+                                                    color: income - totalExpenses >= 0 ? '#00ff9d' : '#FF6B6B',
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: '0.1em'
+                                                }}>
+                                                    Balance
+                                                </span>
+                                            </div>
+                                            <div style={{
+                                                fontSize: '2.5rem',
+                                                fontWeight: '700',
+                                                color: income - totalExpenses >= 0 ? '#00ff9d' : '#FF6B6B'
+                                            }}>
+                                                ${(income - totalExpenses).toLocaleString()}
+                                            </div>
+                                            <div style={{
+                                                marginTop: '0.5rem',
+                                                fontSize: '0.85rem',
+                                                color: '#888'
+                                            }}>
+                                                {income > 0 ? `${((totalExpenses / income) * 100).toFixed(1)}% of income` : ''}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Category Breakdown */}
+                                <div style={{
+                                    background: 'rgba(0, 255, 157, 0.05)',
+                                    border: '1px solid rgba(0, 255, 157, 0.2)',
+                                    borderRadius: '16px',
+                                    padding: '2rem'
+                                }}>
+                                    <h2 style={{
+                                        margin: '0 0 1.5rem 0',
+                                        fontSize: '1.5rem',
+                                        color: '#00ff9d',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em'
+                                    }}>
+                                        Category Breakdown
+                                    </h2>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        {Object.entries(categoryTotals).map(([category, amount]) => {
+                                            const budget = budgets[category] || 0;
+                                            const percentage = budget > 0 ? (amount / budget) * 100 : 0;
+                                            const isOverBudget = percentage > 100;
+
+                                            return (
+                                                <div key={category} style={{
+                                                    padding: '1rem',
+                                                    background: 'rgba(0, 0, 0, 0.2)',
+                                                    borderRadius: '12px',
+                                                    border: `1px solid ${isOverBudget ? 'rgba(255, 107, 107, 0.3)' : 'rgba(0, 255, 157, 0.2)'}`
+                                                }}>
+                                                    <div style={{
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
+                                                        marginBottom: '0.5rem'
+                                                    }}>
+                                                        <span style={{
+                                                            fontWeight: '600',
+                                                            color: colors[category]
+                                                        }}>
+                                                            {category}
+                                                        </span>
+                                                        <span style={{
+                                                            color: isOverBudget ? '#FF6B6B' : '#00ff9d',
+                                                            fontWeight: '600'
+                                                        }}>
+                                                            ${amount.toLocaleString()} / ${budget.toLocaleString()}
+                                                        </span>
+                                                    </div>
+                                                    <div style={{
+                                                        height: '8px',
+                                                        background: 'rgba(0, 0, 0, 0.3)',
+                                                        borderRadius: '4px',
+                                                        overflow: 'hidden'
+                                                    }}>
+                                                        <div style={{
+                                                            height: '100%',
+                                                            width: `${Math.min(percentage, 100)}%`,
+                                                            background: isOverBudget 
+                                                                ? 'linear-gradient(90deg, #FF6B6B 0%, #ff4757 100%)'
+                                                                : `linear-gradient(90deg, ${colors[category]} 0%, ${colors[category]}dd 100%)`,
+                                                            transition: 'width 0.3s ease'
+                                                        }}></div>
+                                                    </div>
+                                                    {isOverBudget && (
+                                                        <div style={{
+                                                            marginTop: '0.5rem',
+                                                            fontSize: '0.8rem',
+                                                            color: '#FF6B6B'
+                                                        }}>
+                                                            ⚠ Over budget by ${(amount - budget).toLocaleString()}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Expenses View */}
+                        {view === 'expenses' && (
+                            <div>
+                                {/* Add Expense Form */}
+                                <div style={{
+                                    padding: '2rem',
+                                    background: 'rgba(0, 255, 157, 0.05)',
+                                    border: '1px solid rgba(0, 255, 157, 0.2)',
+                                    borderRadius: '16px',
+                                    marginBottom: '2rem'
+                                }}>
+                                    <h2 style={{
+                                        margin: '0 0 1.5rem 0',
+                                        fontSize: '1.5rem',
+                                        color: '#00ff9d',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em'
+                                    }}>
+                                        Add New Expense
+                                    </h2>
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                                        gap: '1rem',
+                                        marginBottom: '1rem'
+                                    }}>
+                                        <input
+                                            type="number"
+                                            placeholder="Amount"
+                                            value={newExpense.amount}
+                                            onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})}
+                                            style={{
+                                                padding: '0.75rem',
+                                                background: 'rgba(0, 0, 0, 0.3)',
+                                                border: '1px solid rgba(0, 255, 157, 0.3)',
+                                                borderRadius: '8px',
+                                                color: '#00ff9d',
+                                                fontFamily: 'inherit',
+                                                fontSize: '1rem'
+                                            }}
+                                        />
+                                        <select
+                                            value={newExpense.category}
+                                            onChange={(e) => setNewExpense({...newExpense, category: e.target.value})}
+                                            style={{
+                                                padding: '0.75rem',
+                                                background: 'rgba(0, 0, 0, 0.3)',
+                                                border: '1px solid rgba(0, 255, 157, 0.3)',
+                                                borderRadius: '8px',
+                                                color: '#00ff9d',
+                                                fontFamily: 'inherit',
+                                                fontSize: '1rem'
+                                            }}
+                                        >
+                                            <option value="">Select Category</option>
+                                            {categories.map(cat => (
+                                                <option key={cat} value={cat}>{cat}</option>
+                                            ))}
+                                        </select>
+                                        <input
+                                            type="text"
+                                            placeholder="Description"
+                                            value={newExpense.description}
+                                            onChange={(e) => setNewExpense({...newExpense, description: e.target.value})}
+                                            style={{
+                                                padding: '0.75rem',
+                                                background: 'rgba(0, 0, 0, 0.3)',
+                                                border: '1px solid rgba(0, 255, 157, 0.3)',
+                                                borderRadius: '8px',
+                                                color: '#00ff9d',
+                                                fontFamily: 'inherit',
+                                                fontSize: '1rem'
+                                            }}
+                                        />
+                                        <input
+                                            type="date"
+                                            value={newExpense.date}
+                                            onChange={(e) => setNewExpense({...newExpense, date: e.target.value})}
+                                            style={{
+                                                padding: '0.75rem',
+                                                background: 'rgba(0, 0, 0, 0.3)',
+                                                border: '1px solid rgba(0, 255, 157, 0.3)',
+                                                borderRadius: '8px',
+                                                color: '#00ff9d',
+                                                fontFamily: 'inherit',
+                                                fontSize: '1rem'
+                                            }}
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={addExpense}
+                                        style={{
+                                            padding: '0.75rem 2rem',
+                                            background: '#00ff9d',
+                                            color: '#0f0f23',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            fontFamily: 'inherit',
+                                            fontWeight: '600',
+                                            fontSize: '1rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                            transition: 'all 0.3s ease',
+                                            boxShadow: '0 4px 15px rgba(0, 255, 157, 0.3)'
+                                        }}
+                                    >
+                                        <PlusCircle />
+                                        Add Expense
+                                    </button>
+                                </div>
+
+                                {/* Expense List */}
+                                <div style={{
+                                    background: 'rgba(0, 255, 157, 0.05)',
+                                    border: '1px solid rgba(0, 255, 157, 0.2)',
+                                    borderRadius: '16px',
+                                    padding: '2rem'
+                                }}>
+                                    <h2 style={{
+                                        margin: '0 0 1.5rem 0',
+                                        fontSize: '1.5rem',
+                                        color: '#00ff9d',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em'
+                                    }}>
+                                        Recent Expenses
+                                    </h2>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                        {expenses.slice().reverse().slice(0, 50).map(expense => (
+                                            <div key={expense.id} style={{
+                                                padding: '1rem',
+                                                background: 'rgba(0, 0, 0, 0.2)',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(0, 255, 157, 0.1)',
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center'
+                                            }}>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{
+                                                        fontSize: '1.1rem',
+                                                        fontWeight: '600',
+                                                        color: colors[expense.category],
+                                                        marginBottom: '0.25rem'
+                                                    }}>
+                                                        ${expense.amount.toLocaleString()}
+                                                    </div>
+                                                    <div style={{
+                                                        fontSize: '0.9rem',
+                                                        color: '#888',
+                                                        marginBottom: '0.25rem'
+                                                    }}>
+                                                        {expense.description}
+                                                    </div>
+                                                    <div style={{
+                                                        fontSize: '0.8rem',
+                                                        color: '#666'
+                                                    }}>
+                                                        {expense.category} • {expense.date}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => deleteExpense(expense.id)}
+                                                    style={{
+                                                        padding: '0.5rem',
+                                                        background: 'rgba(255, 107, 107, 0.2)',
+                                                        border: '1px solid rgba(255, 107, 107, 0.3)',
+                                                        borderRadius: '8px',
+                                                        cursor: 'pointer',
+                                                        color: '#FF6B6B',
+                                                        transition: 'all 0.3s ease'
+                                                    }}
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {expenses.length === 0 && (
+                                            <div style={{
+                                                padding: '3rem',
+                                                textAlign: 'center',
+                                                color: '#666'
+                                            }}>
+                                                No expenses yet. Add your first expense above!
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Budgets View */}
+                        {view === 'budgets' && (
+                            <div>
+                                {/* Add Budget Form */}
+                                <div style={{
+                                    padding: '2rem',
+                                    background: 'rgba(0, 255, 157, 0.05)',
+                                    border: '1px solid rgba(0, 255, 157, 0.2)',
+                                    borderRadius: '16px',
+                                    marginBottom: '2rem'
+                                }}>
+                                    <h2 style={{
+                                        margin: '0 0 1.5rem 0',
+                                        fontSize: '1.5rem',
+                                        color: '#00ff9d',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em'
+                                    }}>
+                                        Set Budget Limits
+                                    </h2>
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                                        gap: '1rem',
+                                        marginBottom: '1rem'
+                                    }}>
+                                        <select
+                                            value={newBudget.category}
+                                            onChange={(e) => setNewBudget({...newBudget, category: e.target.value})}
+                                            style={{
+                                                padding: '0.75rem',
+                                                background: 'rgba(0, 0, 0, 0.3)',
+                                                border: '1px solid rgba(0, 255, 157, 0.3)',
+                                                borderRadius: '8px',
+                                                color: '#00ff9d',
+                                                fontFamily: 'inherit',
+                                                fontSize: '1rem'
+                                            }}
+                                        >
+                                            <option value="">Select Category</option>
+                                            {categories.map(cat => (
+                                                <option key={cat} value={cat}>{cat}</option>
+                                            ))}
+                                        </select>
+                                        <input
+                                            type="number"
+                                            placeholder="Budget Amount"
+                                            value={newBudget.amount}
+                                            onChange={(e) => setNewBudget({...newBudget, amount: e.target.value})}
+                                            style={{
+                                                padding: '0.75rem',
+                                                background: 'rgba(0, 0, 0, 0.3)',
+                                                border: '1px solid rgba(0, 255, 157, 0.3)',
+                                                borderRadius: '8px',
+                                                color: '#00ff9d',
+                                                fontFamily: 'inherit',
+                                                fontSize: '1rem'
+                                            }}
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={addBudget}
+                                        style={{
+                                            padding: '0.75rem 2rem',
+                                            background: '#00ff9d',
+                                            color: '#0f0f23',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            fontFamily: 'inherit',
+                                            fontWeight: '600',
+                                            fontSize: '1rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                            transition: 'all 0.3s ease',
+                                            boxShadow: '0 4px 15px rgba(0, 255, 157, 0.3)'
+                                        }}
+                                    >
+                                        <Target size={20} />
+                                        Set Budget
+                                    </button>
+                                </div>
+
+                                {/* Budget List */}
+                                <div style={{
+                                    background: 'rgba(0, 255, 157, 0.05)',
+                                    border: '1px solid rgba(0, 255, 157, 0.2)',
+                                    borderRadius: '16px',
+                                    padding: '2rem'
+                                }}>
+                                    <h2 style={{
+                                        margin: '0 0 1.5rem 0',
+                                        fontSize: '1.5rem',
+                                        color: '#00ff9d',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em'
+                                    }}>
+                                        Your Budgets
+                                    </h2>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                        {Object.entries(budgets).map(([category, amount]) => (
+                                            <div key={category} style={{
+                                                padding: '1rem',
+                                                background: 'rgba(0, 0, 0, 0.2)',
+                                                borderRadius: '12px',
+                                                border: '1px solid rgba(0, 255, 157, 0.1)',
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center'
+                                            }}>
+                                                <div>
+                                                    <div style={{
+                                                        fontSize: '1.1rem',
+                                                        fontWeight: '600',
+                                                        color: colors[category],
+                                                        marginBottom: '0.25rem'
+                                                    }}>
+                                                        {category}
+                                                    </div>
+                                                    <div style={{
+                                                        fontSize: '0.9rem',
+                                                        color: '#888'
+                                                    }}>
+                                                        Budget: ${amount.toLocaleString()}/month
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => deleteBudget(category)}
+                                                    style={{
+                                                        padding: '0.5rem',
+                                                        background: 'rgba(255, 107, 107, 0.2)',
+                                                        border: '1px solid rgba(255, 107, 107, 0.3)',
+                                                        borderRadius: '8px',
+                                                        cursor: 'pointer',
+                                                        color: '#FF6B6B',
+                                                        transition: 'all 0.3s ease'
+                                                    }}
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {Object.keys(budgets).length === 0 && (
+                                            <div style={{
+                                                padding: '3rem',
+                                                textAlign: 'center',
+                                                color: '#666'
+                                            }}>
+                                                No budgets set yet. Add your first budget above!
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Analytics View */}
+                        {view === 'analytics' && (
+                            <div>
+                                {/* Export/Import */}
+                                <div style={{
+                                    padding: '2rem',
+                                    background: 'rgba(0, 255, 157, 0.05)',
+                                    border: '1px solid rgba(0, 255, 157, 0.2)',
+                                    borderRadius: '16px',
+                                    marginBottom: '2rem'
+                                }}>
+                                    <h2 style={{
+                                        margin: '0 0 1.5rem 0',
+                                        fontSize: '1.5rem',
+                                        color: '#00ff9d',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em'
+                                    }}>
+                                        Data Management
+                                    </h2>
+                                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                                        <button
+                                            onClick={exportData}
+                                            style={{
+                                                padding: '0.75rem 1.5rem',
+                                                background: 'rgba(0, 212, 255, 0.2)',
+                                                border: '1px solid rgba(0, 212, 255, 0.3)',
+                                                borderRadius: '8px',
+                                                cursor: 'pointer',
+                                                color: '#00d4ff',
+                                                fontFamily: 'inherit',
+                                                fontWeight: '600',
+                                                fontSize: '0.9rem',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                transition: 'all 0.3s ease'
+                                            }}
+                                        >
+                                            <Download size={18} />
+                                            Export Data
+                                        </button>
+                                        <label style={{
+                                            padding: '0.75rem 1.5rem',
+                                            background: 'rgba(0, 212, 255, 0.2)',
+                                            border: '1px solid rgba(0, 212, 255, 0.3)',
+                                            borderRadius: '8px',
+                                            cursor: 'pointer',
+                                            color: '#00d4ff',
+                                            fontFamily: 'inherit',
+                                            fontWeight: '600',
+                                            fontSize: '0.9rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                            transition: 'all 0.3s ease'
+                                        }}>
+                                            <Upload size={18} />
+                                            Import Data
+                                            <input
+                                                type="file"
+                                                accept=".json"
+                                                onChange={importData}
+                                                style={{ display: 'none' }}
+                                            />
+                                        </label>
+                                    </div>
+                                </div>
+
+                                {/* Statistics */}
+                                <div style={{
+                                    background: 'rgba(0, 255, 157, 0.05)',
+                                    border: '1px solid rgba(0, 255, 157, 0.2)',
+                                    borderRadius: '16px',
+                                    padding: '2rem'
+                                }}>
+                                    <h2 style={{
+                                        margin: '0 0 1.5rem 0',
+                                        fontSize: '1.5rem',
+                                        color: '#00ff9d',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em'
+                                    }}>
+                                        Spending Statistics
+                                    </h2>
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+                                        gap: '1.5rem'
+                                    }}>
+                                        <div style={{
+                                            padding: '1.5rem',
+                                            background: 'rgba(0, 0, 0, 0.2)',
+                                            borderRadius: '12px',
+                                            border: '1px solid rgba(0, 255, 157, 0.1)'
+                                        }}>
+                                            <div style={{
+                                                fontSize: '0.85rem',
+                                                color: '#888',
+                                                marginBottom: '0.5rem',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.1em'
+                                            }}>
+                                                Total Transactions
+                                            </div>
+                                            <div style={{
+                                                fontSize: '2rem',
+                                                fontWeight: '700',
+                                                color: '#00ff9d'
+                                            }}>
+                                                {getMonthlyExpenses().length}
+                                            </div>
+                                        </div>
+                                        <div style={{
+                                            padding: '1.5rem',
+                                            background: 'rgba(0, 0, 0, 0.2)',
+                                            borderRadius: '12px',
+                                            border: '1px solid rgba(0, 255, 157, 0.1)'
+                                        }}>
+                                            <div style={{
+                                                fontSize: '0.85rem',
+                                                color: '#888',
+                                                marginBottom: '0.5rem',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.1em'
+                                            }}>
+                                                Average Transaction
+                                            </div>
+                                            <div style={{
+                                                fontSize: '2rem',
+                                                fontWeight: '700',
+                                                color: '#00d4ff'
+                                            }}>
+                                                ${getMonthlyExpenses().length > 0 ? (totalExpenses / getMonthlyExpenses().length).toFixed(2) : '0'}
+                                            </div>
+                                        </div>
+                                        <div style={{
+                                            padding: '1.5rem',
+                                            background: 'rgba(0, 0, 0, 0.2)',
+                                            borderRadius: '12px',
+                                            border: '1px solid rgba(0, 255, 157, 0.1)'
+                                        }}>
+                                            <div style={{
+                                                fontSize: '0.85rem',
+                                                color: '#888',
+                                                marginBottom: '0.5rem',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.1em'
+                                            }}>
+                                                Categories Active
+                                            </div>
+                                            <div style={{
+                                                fontSize: '2rem',
+                                                fontWeight: '700',
+                                                color: '#F7DC6F'
+                                            }}>
+                                                {Object.keys(categoryTotals).length}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<BudgetApp />);
+    </script>
+</body>
+</html>
